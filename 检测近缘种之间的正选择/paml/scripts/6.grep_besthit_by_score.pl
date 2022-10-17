@@ -3,14 +3,6 @@ use strict;
 
 my @blastouts=glob("*out");
 
-foreach my $blastout (@blastouts) {
-
-        open BLASTOUT,"<","$blastout";
-        open GENELIST,">>","Best_Hit.genelist";
-use autodie;
-use strict;
-
-my @blastouts=glob("*out");
 
 foreach my $blastout (@blastouts) {
 

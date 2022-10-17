@@ -6,9 +6,9 @@ foreach my $fa (@fas) {
         print SHS "makeblastdb -in $fa -out $prefix -dbtype prot\n";
 }
 
-`split -l 1000 -d -a 1 mkblastdb.sh mkblastdb_`;
+`split -l 500 -d -a 1 mkblastdb.sh mkblastdb_`;
 
 my @shs=glob("mkblastdb_*");
 foreach my $sh (@shs) {
-        `nohup bash $sh &`;
+        `nohup bash $sh >>mkblastdb.log 2>>mkblastdb.err &`;
 }

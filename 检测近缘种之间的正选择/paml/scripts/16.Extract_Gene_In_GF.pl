@@ -1,11 +1,13 @@
 use autodie;
 use strict;
 
-open POSGF,"<","$ARGV[0]";
-open GF,"<","$ARGV[1]";
+my $PosGFFile=shift @ARGV;
+open POSGF,"<","$PosGFFile";
+my $OrthogroupFile=shift @ARGV;
+open GF,"<","$OrthogroupFile";
 open ATHGENELIST,">","Ath.genelist.txt";
-my $Spe=$ARGV[3];
-open SPEGENELIST,">","$Spe.genelist.txt";
+my @Spes=@ARGV;
+open SPEGENELIST,">","Spe.genelist.txt";
 
 my @Positive_Selected_OGs;
 while (<POSGF>) {
@@ -28,9 +30,12 @@ while (<GF>) {
 			if ($ele=~m/Ath\|(.*)/) {
 				my $Ath_Gene=$1;
 				print ATHGENELIST "$Ath_Gene\n";
-			} elsif ($ele=~m/$Spe\|(.*)/) {
-				my $Spe_Gene=$1;
-				print SPEGENELIST "$Spe_Gene\n";
+			} elsif ($ele=~m/(?<Gene>(?<Spe>\w{3})\|.*)/) {
+				my $Spe_Gene=$+{Gene};
+				my $Spe=$+{Spe};
+				if (grep {$Spe eq $_} @Spes) {
+					print SPEGENELIST "$Spe_Gene\n";
+				}
 			}
 		}
 	}

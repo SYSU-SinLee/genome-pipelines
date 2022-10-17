@@ -1,5 +1,3 @@
-die "Usage: perl $0 cds.fa pep.fa Best_Hit.genelist\n" if @ARGV!=3;
-
 use autodie;
 use strict;
 
@@ -39,8 +37,8 @@ while (<GENELIST>) {
 	open PEPSEQ,">","$OG.pep";
 	open CDSSEQ,">","$OG.cds";
 	foreach my $Gene (@eles) {
-		print PEPSEQ "$Pep{$Gene}\n";
-		print CDSSEQ "$Cds{$Gene}\n";
+		print PEPSEQ "\>$Gene\n$Pep{$Gene}\n";
+		print CDSSEQ "\>$Gene\n$Cds{$Gene}\n";
 		warn "Cannot find the CDS sequence of Gene $Gene in $OG\n" if !exists $Cds{$Gene};
 		warn "Cannot find the protein sequence of Gene $Gene in $OG\n" if !exists $Pep{$Gene};		
 	}

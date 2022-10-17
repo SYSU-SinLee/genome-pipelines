@@ -6,7 +6,7 @@ foreach my $fa (@fas) {
 		print BLS "blastp -query $fa -db $prefix -outfmt 6 -num_threads 5 -evalue 1e-5 -out $prefix.out\n"
 }
 
-`split -l 1000 -d -a 1 blast.sh blast_`;
+`split -l 500 -d -a 1 blast.sh blast_`;
 
 my @shs=glob("blast_*");
 foreach my $sh (@shs) {

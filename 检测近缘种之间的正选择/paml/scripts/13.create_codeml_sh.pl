@@ -1,13 +1,9 @@
-## This script is used to create paml ctl file for branch-site model.
-
-
 my @phys=glob("*phy");
 
 foreach my $phy (@phys) {
 
-open SH,"<<","codeml.sh";
-	my ($prefix=$phy)=~s/\.phy//;
-	open MA,"<","$prefix.ma.ctl";
+	(my $prefix=$phy)=~s/\.phy//;
+	open MA,">","$prefix.ma.ctl";
 	print MA "seqfile = $phy;
 treefile = speciestree.tree
 outfile = $phy.ma
@@ -35,7 +31,7 @@ Small_Diff = .5e-6
 *  fix_blength = 0
 method = 0";
 
-	open M0,"<","$prefix.m0.ctl";
+	open M0,">","$prefix.m0.ctl";
 	print M0 "seqfile = $phy
 treefile = speciestree.tree
 outfile = $phy.m0

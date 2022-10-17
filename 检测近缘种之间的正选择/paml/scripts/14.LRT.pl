@@ -1,12 +1,5 @@
-## Here we use Likelihood Ratio Test, and the p-value threshold is 0.05.
-## Use command "chi2" in paml software to check the p-value table of chi2 test.
-
-
 open M0,"<","$ARGV[0]";
 open MA,"<","$ARGV[1]";
-
-die "Usage: perl $0 ma.lnL m0.lnL\n" if @ARGV!=2;
-
 
 my @fas;
 
@@ -39,7 +32,7 @@ my @fas=sort {$delta_lnLs{$b}<=>$delta_lnLs{$a}} keys %delta_lnLs;
 open POS,">positive_selected.txt";
 open NON,">non_positive_selected.txt";
 foreach my $fa (@fas) {
-	if ($delta_lnLs{$fa}>=2.71) {
+	if ($delta_lnLs{$fa}>=2.7055) {
 		print POS "$fa\t$delta_lnLs{$fa}\n";
 	} else {
 		print NON "$fa\t$delta_lnLs{$fa}\n";
