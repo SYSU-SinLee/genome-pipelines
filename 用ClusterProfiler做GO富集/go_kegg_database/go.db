@@ -1,4 +1,4 @@
-GO	DESC	CLASS
+GO	Description	level
 GO:0000001	mitochondrion inheritance	biological_process
 GO:0000002	mitochondrial genome maintenance	biological_process
 GO:0000003	reproduction	biological_process
