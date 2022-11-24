@@ -150,7 +150,7 @@ perl scripts/3.extract_ortholog.cds.pl ./Orthogroups/Orthogroups.txt all_cds_dir
 ### 4.2.4 cds结果排序
 
 ```bash
-perl scripts/4.sort_cds_mafft.pl mafftoutdir/mafftseqs singlecopycdsdir sortedcdsdir
+perl scripts/4.sort_cds_mafft.pl mafftout/mafftseqs singlecopycdsdir sortedcdsdir
 ```
 
 ---
@@ -160,7 +160,7 @@ perl scripts/4.sort_cds_mafft.pl mafftoutdir/mafftseqs singlecopycdsdir sortedcd
 注意更改脚本中的*pal2nal*软件的路径
 
 ```bash
-perl scripts/5.create_pal2aln.pl mafftoutdir/mafftseqs sortedcdsdir pal2nalfas pal2nal.sh
+perl scripts/5.create_pal2aln.pl mafftout/mafftseqs sortedcdsdir pal2nalfas pal2nal.sh
 nohup bash pal2nal.sh >pal2nal.log 2>>pal2nal.err &
 mkdir pal2naloutdir
 mv pal2nal* err* pal2naloutdir
@@ -351,11 +351,73 @@ mcmctree mcmctree.ctl
 
 ---
 
-# 5 脚本和整合的shell
+# 5. CAFE做基因家族演化分析
+
+## 5.1 软件和自带脚本包的下载和安装
+
+[^note]: 这里用的是CAFE4.2，下载Python包的网站有时候不可用，直接从我的github上面下载比较好。
+
+cafe的[github主页](https://github.com/hahnlab/CAFE)、[最新版下载页面](https://github.com/hahnlab/CAFE/releases/tag/v4.2.1)、[官网](https://hahnlab.github.io/CAFE/download.html)、[自带的Python包](https://iu.app.box.com/v/cafetutorial-files)。
+
+```bash
+# 解压和安装
+./configure
+make
+
+# cafe的执行文件在“release”文件夹中
+```
+
+## 5.2 输入文件和config文件准备
+
+```bash
+# "Orthogroups.GeneCount.tsv"文件在Orthofinder输出中的“Orthogroups”文件夹。
+
+perl GeneCount2CafeInput.pl ../Orthogroups/Orthogroups.GeneCount.tsv >cafeinput.raw
+python cafetutorial_clade_and_size_filter.py -s -i cafeinput.raw -o cafeinput.filtered
+```
+
+## 5.3 运行CAFE
+
+```BASH
+cafe cafe_script.sh
+
+# 下面是cafe_script.sh文件
+#! ~/software/CAFE/release/cafe
+date
+load -i cafeinput.filtered -p 0.01 -t 10 -l log.txt
+# -t, 使用的线程数
+# -p, 显著性判断阈值
+#the phylogenetic tree structure with branch lengths
+# 这棵树可以直接用mcmctree输出的树
+tree (Nnu:124.5781,((Ath:24.2897,Tha:24.2897):94.0914,(((((Bse:13.0498,Bgy:13.0498):2.2495,Bcy:15.2993):22.3403,Rap:37.6396):15.1566,Clo:52.7963):40.9378,((Mes:67.4141,Rco:67.4141):19.6264,(Spu:22.7468,(Ptr:10.8282,Peu:10.8282):11.9186):64.2937):6.6936):24.6470):6.1971)
+#search for 2 parameter model
+# 也可以对不同的clade设置不同的lambda值，最终的结果好像差别不是很大
+lambda -s -t (1,((1,1)1,(((((1,1)1,1)1,1)1,1)1,((1,1)1,(1,(1,1)1)1)1)1)1)
+report reportout1
+date
+```
+
+## 5.4 结果统计
+
+```bash
+python report_analysis.py -i reportout1.cafe -r 1 -o rapid
+
+# -r, 选择1就是统计p值显著的基因家族，0就是所有基因家族
+```
+
+## 5.5 用拟南芥的基因做基因家族功能注释
+
+```bash
+perl Rapid_GF_Anno.pl rapid_fams.txt Orthogroups.txt ath.gene.discription
+```
+
+
+
+# 6 脚本和整合的shell
 
 ---
 
-## 5.1 整个流程的shell
+## 6.1 整个流程的shell
 
 注意：
 
@@ -382,8 +444,8 @@ bash mafft.sh >mafft.log 2>>mafft.err
 mkdir mafftout
 mv mafft* mafftout
 perl scripts/3.extract_ortholog.cds.pl ./Orthogroups/Orthogroups.txt all_cds_dir/ singlecopycdsdir length_check.txt 
-perl scripts/4.sort_cds_mafft.pl mafftoutdir/mafftseqs singlecopycdsdir sortedcdsdir 
-perl scripts/5.create_pal2aln.pl mafftoutdir/mafftseqs sortedcdsdir pal2nalfas pal2nal.sh 
+perl scripts/4.sort_cds_mafft.pl mafftout/mafftseqs singlecopycdsdir sortedcdsdir 
+perl scripts/5.create_pal2aln.pl mafftout/mafftseqs sortedcdsdir pal2nalfas pal2nal.sh 
 bash pal2nal.sh >pal2nal.log 2>>pal2nal.err 
 mkdir pal2naloutdir 
 mv pal2nal* err* pal2naloutdir 
@@ -407,7 +469,7 @@ nohup java -jar -XX:ParallelGCThreads=4 -Xmx4g ~/software/jmodeltest-2.1.10/jMod
 
 ---
 
-## 5.2 脚本
+## 6.2 脚本
 
 ### add_species_name_to_fa_sequences.pl
 
@@ -878,3 +940,795 @@ nsample = 50000
 ```
 
 ---
+
+### GeneCount2CafeInput.pl
+
+```perl
+use 5.011;
+
+while (<>) {
+        if (/^Orthogroup/) {
+                chomp;
+                my $line=$_;
+                my @eles=split/\s+/,$line;
+                print "Desc\tFamily ID\t";
+                shift @eles;
+                pop @eles;
+                my $lastone=pop @eles;
+                map {print "$_\t"} @eles;
+                say $lastone;
+        } else {
+                chomp;
+                my $line=$_;
+                my @eles=split/\s+/,$line;
+                print "(null)\t";
+                pop @eles;
+                my $lastone=pop @eles;
+                map {print "$_\t"} @eles;
+                say $lastone;
+        }
+}
+```
+
+---
+
+### clade_and_size_filter.py
+
+```python
+"""
+This script defines and runs the clade_filter and size_filter functions. The former keeps only gene families with gene copies in at least two species of the specified clades; this is necessary because ancestral state reconstruction requires at least two species per clade of interest. The latter separates gene families with < 100 from > 100 gene copies in one or more species; this is necessary because big gene families cause the variance of gene copy number to be too large and lead to noninformative parameter estimates.
+The output should be two CAFE input files, one for gene families with < 100 gene copies in all species, another for the remaining gene families. The first file should be used to estimate parameter values, and these values should then be used to analyse the second file.
+"""
+
+__author__ = "Fabio H. K. Mendes"
+
+import os
+import argparse
+
+def clade_filter(mcl_dump, clade_str):
+    """
+    Return set of lines to print after checking if at least 2 species in specified clades have gene copies for a given gene family
+
+    [str] mcl_dump: path to mcl's dump file
+    [str] clade_str: clades of interest (separated by white spaces, with species within clades separated by comma)
+                       (e.g., "ENSBTA,ENSCFA,ENSECA  ENSMUS,ENSNLE,ENSPTR,ENSPAN,ENSPPY,ENSCJA,ENSP00 ENSMMU,ENSRNO")
+    """
+    lines_to_keep_list = list()
+    spp_idx_dict = dict()
+    clades_list = list()
+    if clade_str: # if clade filter was specified
+        clades_list = clade_str.split(" ")
+
+    with open(mcl_dump, "r") as input_file:
+        for line_n, line in enumerate(input_file):
+            line = line.rstrip()
+            tokens = line.split("\t")
+            spp_info = tokens[2:]
+
+            if line.startswith("Desc"):
+                spp_idx_dict = dict((sp, idx) for idx,sp in enumerate(spp_info))
+                continue
+
+            if clades_list:
+                clades_ok_list = list()
+
+                for clade in clades_list:
+                    spp_list = clade.split(",")
+                    clade_count = sum(1 for sp in spp_list if int(spp_info[spp_idx_dict[sp]]) >= 1)
+
+                    if clade_count >= 2:
+                        clades_ok_list.append(1)
+
+                if sum(clades_ok_list) == len(clades_list):
+                    lines_to_keep_list.append(line_n)
+
+            # just keeping lines where >=2 species (among all of them) have gene copies
+            clade_count = sum(1 for sp_count in spp_info if int(sp_count) >= 1)
+            if clade_count >= 2:
+                lines_to_keep_list.append(line_n)
+
+    return set(lines_to_keep_list)
+
+def size_filter(mcl_dump, lines_to_keep_set):
+    """
+    Return set of lines to print after checking if at least 2 species in specified clades have gene copies for a given gene family
+
+    [str] mcl_dump: path to mcl's dump file
+    """
+    lines_to_remove_set = set()
+    size_cutoff = 100
+    fam_size = int()
+    with open(mcl_dump, "r") as input_file:
+        for line_n, line in enumerate(input_file):
+            line = line.rstrip()
+
+            if line.startswith("Desc"):
+                continue
+
+            elif line_n not in lines_to_keep_set and len(lines_to_keep_set) > 0:
+                continue
+
+            tokens = line.split("\t")
+            spp_info = tokens[2:]
+
+            for gene_count in spp_info:
+                if int(gene_count) >= size_cutoff:
+                    lines_to_separate_set.add(line_n)
+
+    lines_to_keep_set -= lines_to_separate_set
+
+    return lines_to_keep_set, lines_to_separate_set
+
+def filter_print(mcl_dump, lines_to_keep_set, lines_to_separate_set, output_file_name):
+    """
+    Print two mcl input files, one with gene families having < 100 gene copies, the other with gene families having > 100 copies
+    """
+    if len(lines_to_keep_set) == 0 and len(lines_to_separate_set) == 0:
+        exit("No filtering was done! Exiting...\n")
+
+    with open(output_file_name, "w") as output_file:
+        with open("large_"+output_file_name, "w") as output_file2:
+            with open(mcl_dump, "r") as input_file:
+                for line_n, line in enumerate(input_file):
+                    line = line.rstrip() + "\n"
+
+                    if line_n == 0:
+                        output_file.write(line)
+                        output_file2.write(line)
+
+                    elif line_n in lines_to_keep_set and len(lines_to_keep_set) >= 1:
+                        output_file.write(line)
+
+                    elif line_n not in lines_to_separate_set and len(lines_to_keep_set) == 0:
+                        output_file.write(line)
+
+                    # has to be if, not elif
+                    if line_n in lines_to_separate_set:
+                        output_file2.write(line)
+
+        # cleaning up in case size filtering was not done
+        if len(lines_to_separate_set) == 0:
+            os.unlink("large_"+output_file_name)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__, prog="cafetutorial_clade_and_size_filter.py")
+    parser.add_argument("-i", "--input-file", action="store", dest="input_file", required=True, type=str, help="full path to mcl's output dump file")
+    parser.add_argument("-o", "--output-file", action="store", dest="output_file", required=True, type=str, help="full path to file to be written")
+    parser.add_argument("-cl", "--clade-filter", action="store", dest="clade_str", default=None, required=False, type=str, help="list of clades (separated by white spaces) comprised of species identifiers (separated by comma) that must have at least two species with gene copies for a given gene family")
+    parser.add_argument("-s", "--size-filter", action="store_true", dest="size_filter", required=False, help="option to perform size filtering")
+
+    args = parser.parse_args()
+
+    lines_to_keep_set, lines_to_separate_set = set(), set()
+
+    # applying size filter (if no groups are specified, just the lines where just 1 species has gene counts are removed
+    lines_to_keep_set = clade_filter(args.input_file, args.clade_str)
+
+    if args.size_filter:
+        lines_to_keep_set, lines_to_separate = size_filter(args.input_file, lines_to_keep_set)
+
+    filter_print(args.input_file, lines_to_keep_set, lines_to_separate_set, args.output_file) # .add(0) to get header back
+```
+
+---
+
+### cafe_script.sh
+
+```
+#! ~/software/CAFE/release/cafe
+date
+load -i cafeinput.filtered -p 0.01 -t 10 -l log.txt
+# -t, 使用的线程数
+# -p, 显著性判断阈值
+#the phylogenetic tree structure with branch lengths
+# 这棵树可以直接用mcmctree输出的树
+tree (Nnu:124.5781,((Ath:24.2897,Tha:24.2897):94.0914,(((((Bse:13.0498,Bgy:13.0498):2.2495,Bcy:15.2993):22.3403,Rap:37.6396):15.1566,Clo:52.7963):40.9378,((Mes:67.4141,Rco:67.4141):19.6264,(Spu:22.7468,(Ptr:10.8282,Peu:10.8282):11.9186):64.2937):6.6936):24.6470):6.1971)
+#search for 2 parameter model
+# 也可以对不同的clade设置不同的lambda值，最终的结果好像差别不是很大
+lambda -s -t (1,((1,1)1,(((((1,1)1,1)1,1)1,1)1,((1,1)1,(1,(1,1)1)1)1)1)1)
+report reportout1
+date
+```
+
+---
+
+### Rapid_GF_Anno.pl
+
+```perl
+use strict;
+use autodie;
+
+die "Usage: perl $0 rapid_fams.txt Orthogroups.txt ath.gene.discription\n" if @ARGV != 3 ;
+
+open RGF,"<","$ARGV[0]";
+open ORTHO,"<","$ARGV[1]";
+open ANNO,"<","$ARGV[2]";
+
+my %Ath_Genes;
+while (<ORTHO>) {
+		s/\s+$//;
+		my @eles=split/\s+/,$_;
+		my $OG=shift @eles;
+		$OG=~s/://;
+		my @Ath_Genes;
+		foreach my $ele (@eles) {
+			push @Ath_Genes,$ele if $ele=~/Ath/;
+		}
+		$Ath_Genes{$OG}=[@Ath_Genes];
+		undef @Ath_Genes;
+}
+close ORTHO;
+
+
+my %Description;
+while (<ANNO>) {
+	next if /^Locus/;
+	next if /^\s+$/;
+	s/\s+$//;
+	s/\(source\:Araport11\)//;
+	s/\s+protein_coding//;
+	my @eles=split/\s+/;
+	my $Locus=shift @eles;
+	my $Gene=shift @eles;
+	my $Description=join(' ',@eles);
+	$Description{$Gene}=$Description;
+}
+
+while (<RGF>) {
+	next if (/^#/ || /^Overall/);
+	s/\s+$//;
+	my @eles=split/\s+/;
+	my $spe=shift @eles;
+	$spe=~s/\<//;
+	$spe=~s/\>//;
+	my @OGs=split/,/,(shift @eles);
+	(my $out=$spe)=~s/:/\.rapid\.AthAnno/;
+	open OUT,">","$out";
+	foreach my $OG (@OGs) {
+		$OG=~m/(\+|\-)/;
+		my $Status=$1;
+		$OG=~s/\[.*\]//;
+		my @Ath_Genes=@{$Ath_Genes{$OG}};
+		foreach my $Ath_Gene (@Ath_Genes) {
+			$Ath_Gene=~s/^Ath\|//;
+			print OUT "$OG$Status: $Description{$Ath_Gene}\n";
+		}
+	}
+
+}
+```
+
+---
+
+### report_analysis.py
+
+```python
+#!/usr/bin/python
+########################################################################################
+# The new CAFE Report Analysis script.
+#
+# Gregg Thomas, Spring 2016
+########################################################################################
+
+import sys, os, argparse, cafecore as cafecore
+
+############################################
+#Function Definitions
+############################################
+
+def optParse(errorflag):
+#This function handles the command line options.
+
+	parser = argparse.ArgumentParser(description="Analyzes a CAFE report file (.cafe)");
+
+	parser.add_argument("-i", dest="report_input_file", help="A CAFE report file (.cafe).");
+	parser.add_argument("-r", dest="rapids_out", help="1: Output file will be list of only rapidly changing families on each node. 0: Output file will be list of all changing families on each node. Default: 1", type=int, default=1);
+	parser.add_argument("-l", dest="large_fam_file", help="A CAFE report file for the large families of the same set of species.");
+	parser.add_argument("-o", dest="output_prefix", help="A prefix string to put on all the output files generated.");
+
+	args = parser.parse_args();
+
+	if errorflag == 0:
+		if args.report_input_file == None or args.output_prefix == None:
+			cafecore.errorOut(1, "A CAFE report file must be specified with -i and an output file name with -o");
+			optParse(1);
+
+		if args.rapids_out not in [1,0]:
+			cafecore.errorOut(2, "-r can only take values of 0 or 1");
+			optParse(1);
+
+		return args.report_input_file, args.rapids_out, args.large_fam_file, args.output_prefix;
+
+	elif errorflag == 1:
+		parser.print_help();
+		sys.exit();
+
+#######################
+
+def formatLineParse(line):
+# This function handles CAFE's weird node pair format for the p-values and node ids.
+
+	if "=" in line:
+		line = line.split("=")[1];
+	if ":" in line:
+		line = line.split(": ")[1].strip();
+	line = line.replace("(", "").replace(")", "");
+	line = line.split(" ");
+	line = [f.split(",") for f in line];
+
+	return line;
+
+#######################
+
+def nodeRelabel(treedict):
+# Family trees are read with gene counts on the tip labels. This function removes them.
+
+	tmp = {};
+	#print treedict;
+
+	for oldkey in treedict:
+		if treedict[oldkey][3] == 'tip':
+			newkey = oldkey[:oldkey.index("_")];
+			tmp[newkey] = treedict[oldkey];
+		else:
+			tmp[oldkey] = treedict[oldkey];
+
+	return tmp;
+
+#######################
+
+def nodeMap(cafetd, mytd):
+# CAFE has pre-determined mappings in the tree. When I read the tree with my own script the mappings
+# are different. This function creates a map from my node ids to CAFE's node ids.
+# The dictionary nodemap has the following {key:value} format: {my node id:CAFE's node id}
+
+	nodemap = {};
+	# The map dictionary.
+
+	##############
+	# for node in cafetd:
+	# 	if cafetd[node][3] == 'tip':
+	# 		spec = node[:node.index("<")];
+	# 		cafeid = node[node.index("<")+1:node.index(">")];
+	# 		nodemap[cafeid] = spec;
+
+	# while len(nodemap) != len(cafetd):
+	# 	for node in cafetd:
+	# 		if cafetd[node][3] == 'root':
+	# 			continue;
+
+	# 		orignode = node;
+	# 		node = node[node.index("<")+1:node.index(">")];
+
+	# 		if node in nodemap:
+	# 			if cafetd[orignode][3] == 'tip':
+	# 				curanc = cafetd[orignode][1];
+	# 				mapanc = mytd[nodemap[node]][1];
+	# 			else:
+	# 				curanc = cafetd[orignode][1];
+	# 				mapanc = mytd["<" + nodemap[node] + ">"][1];
+
+	# 			nodemap[curanc.replace("<","").replace(">","")] = mapanc.replace("<","").replace(">","");
+	##############
+	# The above formats nodemap with the reverse {key:value} format: {CAFE's node id:my node id}
+
+	for node in cafetd:
+		if cafetd[node][3] == 'tip':
+			spec = node[:node.index("<")];
+			cafeid = node[node.index("<"):];
+			nodemap[spec] = node;
+	# First map the tips by their unique species labels.
+
+	while len(nodemap) != len(mytd):
+		for node in mytd:
+			if mytd[node][3] == 'root':
+				continue;
+
+			if node in nodemap:
+				curanc = mytd[node][1];
+				mapanc = cafetd[nodemap[node]][1];
+
+				nodemap[curanc] = mapanc;
+	# Then do a post-order traversal and map the current node's ancestor to it's map's ancestor.
+
+	return nodemap;
+
+#######################
+def cra(inlines, results, node_fams, linestart, afilename, s_nodes, v):
+	numbars = 0;
+	donepercent = [];
+	i = 0;
+	acount = 0;
+	afile = open(afilename, "a");
+
+	for inline in inlines:
+	# Each line of the report file is read.
+		if v == 1:
+			numbars, donepercent = cafecore.loadingBar(i, len(inlines), donepercent, numbars);
+		i = i + 1;
+
+		if i <= linestart:
+			continue;
+		# If the line is a CAFE info line, skip it.
+
+		inline = inline.strip().split("\t");
+		famid = inline[0];
+		famtree = inline[1];
+		nodeformat = inline[3].replace("),(", ") (");
+		# Parsing the information for the current family.
+
+		outline = famid + "\t";
+		outlist = [0 for n in s_nodes];
+		# Prep for the anc states file.
+
+		nodes = formatLineParse(nodeformat);
+
+		tlinfo, newfamtree = cafecore.treeParseNew(famtree, 1);
+		# Reading the tree and adding my node labels.
+
+		for tlnode in tlinfo:
+			if tlinfo[tlnode][3] == 'root':
+				tlinfo[tlnode].append(famtree[famtree.rfind("_")+1:]);
+			elif tlinfo[tlnode][3] == 'tip':
+				tlinfo[tlnode].append(tlnode[tlnode.index("_")+1:]);
+			else:
+				tlinfo[tlnode][4] = tlinfo[tlnode][4][1:];
+		# Gene counts for each node are read as support values for internal nodes, but must
+		# have the underscore removed. Tip and root node counts are added here as well.
+
+		tlinfo = nodeRelabel(tlinfo);
+		# Removes the gene counts from the tip node labels.
+
+		if i == (linestart + 1):
+			maps = nodeMap(tinfo, tlinfo);
+		# If this is the first family, we need to build our maps from my node ids to CAFE's.
+
+		for tlnode in tlinfo:
+		# For each node in the current gene family tree, we make our counts.
+
+			if tlinfo[tlnode][3] == 'root':
+				continue;
+			# No count is made at the root of the tree.
+
+			curanc = tlinfo[tlnode][1];
+			curmap = maps[tlnode];
+			# Get the ancestor and the map of the current node.
+
+			curcount = int(tlinfo[tlnode][4]);
+			anccount = int(tlinfo[curanc][4]);
+			# Get the gene counts of the current node and the ancestor.
+
+			outlist[s_nodes.index(curmap)] = str(curcount);
+			# Save the count of the current node to be sent to the anc states file.
+
+			diff = curcount - anccount;
+			# Calculate the difference in gene count.
+
+			typeflag = 0;
+			# typeflag tells whether an expansion or contraction has occurred.
+
+			if curcount > anccount:
+				typeflag = 1;
+				results[curmap][0] += 1;
+				results[curmap][1] += diff;
+
+				if r_opt == 0:
+					node_fams[curmap][0].append(famid + "[+" + str(diff) + "]");
+
+					if famid not in node_fams['total']:
+						node_fams['total'].append(famid);
+			# If the difference in gene count between the current node and the ancestor is positive, an
+			# expansion has occurred. This makes the appropriate counts.
+
+			elif curcount < anccount:
+				typeflag = 2
+				results[curmap][3] += 1;
+				results[curmap][4] += abs(diff);
+
+				if curcount == 0 and anccount != 0:
+					results[curmap][5] += 1;
+
+				if r_opt == 0:
+					node_fams[curmap][1].append(famid + "[" + str(diff) + "]");
+
+					if famid not in node_fams['total']:
+						node_fams['total'].append(famid);
+			# If the difference in gene count between the current node and the ancestor is negative, a
+			# contraction has occurred. This makes the appropriate counts. It also checks for family losses
+			# along that branch by seeing if the current node has transitioned to a count of 0.
+
+			elif curcount == anccount:
+				results[curmap][2] += 1;
+			# Otherwise, the counts at the current node and the ancestor are the same and no change has occurred.
+
+			if float(inline[2]) < 0.01:
+			# If the family p-value is below a threshold, the family is rapidly evolving.
+
+				if r_opt == 1:
+					if famid not in node_fams['total']:
+						node_fams['total'].append(famid);
+				# Add the family id to the 'total' key of node_fams. This also parses the nodeformat line which is
+				# in the paired CAFE node format.
+
+				pairnodeid = curmap[curmap.index("<")+1:curmap.index(">")];
+				# Since the paired format does not include the brackets that the other node labels do, I have to
+				# remove them to check against that format.
+
+				for j in range(len(nodes)):
+					for k in range(len(nodes[j])):
+						if formatline[j][k] == pairnodeid and float(nodes[j][k]) < 0.01:
+							if typeflag == 1:
+								results[curmap][7] += 1;
+								if r_opt == 1:
+									node_fams[curmap][0].append(famid + "[+" + str(diff) + "*]");
+								elif r_opt == 0:
+									node_fams[curmap][0].pop();
+									node_fams[curmap][0].append(famid + "[+" + str(diff) + "*]");
+							elif typeflag == 2:
+								results[curmap][8] += 1;
+								if r_opt == 1:
+									node_fams[curmap][1].append(famid + "[" + str(diff) + "*]");
+								elif r_opt == 0:
+									node_fams[curmap][1].pop();
+									node_fams[curmap][1].append(famid + "[" + str(diff) + "*]");
+							results[curmap][9] += 1;
+				# Runs through the paired format as a list of lists. If the p-value of that node is less than a threshold
+				# that branch is rapidly evolving. Based on typeflag, the appropriate counts are made. The family id is
+				# also added to the current node in rapids.
+
+		outline += "\t".join(outlist) + "\n";
+		afile.write(outline);
+		# Write the states of the current family to the anc states file
+
+	if v == 1:
+		pstring = "100.0% complete.";
+		sys.stderr.write('\b' * len(pstring) + pstring);
+	afile.close();
+	return results, node_fams;
+
+############################################
+#Main block
+############################################
+
+infilename, r_opt, largefilename, outprefix = optParse(0);
+#Get the input parameters.
+
+famfilename = outprefix + "_fams.txt";
+nodefilename = outprefix + "_node.txt";
+pubfilename = outprefix + "_pub.txt";
+ancfilename = outprefix + "_anc.txt";
+
+print "=======================================================================";
+print "\t\tCAFE Report File Analysis"
+print "\t\t" + cafecore.getDateTime();
+print "---------";
+print "Parsing format information...\n";
+
+infile = open(infilename, "r");
+inlines_main = infile.readlines();
+infile.close();
+# Reads the input report file.
+
+if inlines_main[2].find("Lambda tree:") != -1:
+	treeline = inlines_main[3];
+	formatline = inlines_main[4];
+	avgline = inlines_main[6];
+	linestart_main = 11;
+else:
+	treeline = inlines_main[2]
+	formatline = inlines_main[3];
+	avgline = inlines_main[5];
+	linestart_main = 10;
+# If CAFE was run with a lambda tree structure as input, the report file places that on the third
+# line. This shifts all the other relevant lines down by 1. This if/else accounts for that.
+
+labeled_tree = treeline[treeline.index(":")+1:].strip();
+tinfo, newtree = cafecore.treeParseNew(labeled_tree,2);
+# This reads the CAFE tree with its node labels.
+
+formatline = formatLineParse(formatline);
+# formatline is CAFE's line with its paired node format with node ids. The formatLineParse function
+# reads that format and returns it as a list of lists.
+
+avgline = avgline.split(":\t")[1].strip().replace("\t", " ");
+avgline = formatLineParse(avgline);
+# The line of average expansions for each node, in the paired node format. Again passed to formatLineParse
+# to make it interpretable.
+
+print "---------";
+print "Initializing output structures...\n";
+
+node_fams_main = {"total" : []};
+results_main = {};
+
+sorted_nodes = [];
+ancfile = open(ancfilename, "w");
+header = "Family ID\t";
+
+for node in tinfo:
+	if tinfo[node][3] == 'root':
+		continue;
+	node_fams_main[node] = [[],[]];
+	results_main[node] = [0,0,0,0,0,0,0,0,0,0];
+
+	sorted_nodes.append(node);
+	header += node + "\t";
+
+ancfile.write(header[:-1] + "\n");
+ancfile.close();
+# [expand,gene expand,equal,contract,gene contract,families lost,avg expansion,sigexpand,sigcontract,total sig changes]
+# node_fams and results are the two main dictionaries to store CAFE's results.
+# node_fams {key:value} format: {node:list of two lists containing family ids for (rapid) expansions and (rapid) contractions, respectively}
+# results {key:value} format: {node:[expand,gene expand,equal,contract,gene contract,families lost,avg expansion,sigexpand,sigcontract,total sig changes]}
+# This loop also does the prepping of the header and sorted nodes for the anc count file
+
+for j in range(len(formatline)):
+	for k in range(len(formatline[j])):
+		n = "<" + formatline[j][k] + ">";
+		for r in results_main:
+			if n in r:
+				results_main[r][6] = avgline[j][k];
+# Setting average expansion in results as read from avgline
+
+print "---------";
+print "Counting changes per branch...\n";
+
+results_main, node_fams_main = cra(inlines_main, results_main, node_fams_main, linestart_main, ancfilename, sorted_nodes, 1);
+
+if largefilename != None:
+	print "\n\n---------";
+	print "Parsing large families...\n";
+
+	lfile = open(largefilename, "r");
+	llines_main = lfile.readlines();
+	lfile.close();
+	# Reads the input report file.
+
+	if llines_main[2].find("Lambda tree:") != -1:
+		linestart_main = 11;
+	else:
+		linestart_main = 10;
+
+	results_main, node_fams_main = cra(llines_main, results_main, node_fams_main, linestart_main, ancfilename, sorted_nodes, 0);
+
+print "\nDone!";
+print "=======================================================================";
+
+print "Writing output files...";
+
+## Begin fam output block.
+outfile = open(famfilename, "w");
+outfile.write("");
+# Initialize the output file.
+outfile.write("# The labeled CAFE tree:\t" + labeled_tree + "\n");
+
+if r_opt == 0:
+	desc_str = " ";
+elif r_opt == 1:
+	desc_str = " rapid ";
+
+outline = "Overall" + desc_str + ":\t"
+for f in node_fams_main['total']:
+	outline = outline + f + ",";
+outline = outline[:-1] + "\n";
+outfile.write(outline);
+
+for spec in node_fams_main:
+	if spec == 'total':
+		continue;
+
+	# for f in range(len(node_fams_main[spec])):
+	# 	if f == 0:
+	# 		outline = spec + desc_str + "expansions:\t";
+	# 	elif f == 1:
+	# 		outline = spec + desc_str + "contractions:\t";
+
+	# 	for rapid_f in node_fams_main[spec][f]:
+	# 		outline = outline + rapid_f + ",";
+	# 	outline = outline[:-1] + "\n";
+	# 	outfile.write(outline);
+	# For output on separate lines for expansions and contractions per species.
+
+	outline = spec + ":\t";
+	outline += ",".join(node_fams_main[spec][0] + node_fams_main[spec][1]) + "\n";
+	outfile.write(outline);
+	# For output on a single line per species.
+
+outfile.close();
+## End fam output block
+
+
+## Begin node and pub output block
+nodefile = open(nodefilename, "w");
+nodefile.write("Node\tExpansions\tContractions\tRapidly evolving families\n");
+
+pubfile = open(pubfilename, "w");
+pubfile.write("Species\tExpanded fams\tGenes gained\tgenes/expansion\tContracted fams\tGenes lost\tgenes/contraction\tNo change\tAvg. Expansion\n");
+
+for node in results_main:
+	outline = node + "\t" + str(results_main[node][0]) + "\t" + str(results_main[node][3]) + "\t" + str(results_main[node][9]) + "\n";
+	nodefile.write(outline);
+
+	if node.replace("<","").replace(">","").isdigit():
+		continue;
+
+	spec = node.title()[:node.index("<")];
+	exp = results_main[node][0];
+	con = results_main[node][3];
+	outline = spec + "\t" + str(results_main[node][0]) + " (" + str(results_main[node][7]) + ")\t" + str(results_main[node][1]) + "\t";
+	if exp != 0:
+		outline += str(round(float(results_main[node][1])/float(exp),2)) + "\t";
+	else:
+		outline += '0' + "\t";
+	outline += str(results_main[node][3]) + " (" + str(results_main[node][8]) + ")\t" + str(results_main[node][4]) + "\t";
+	if con != 0:
+		outline += str(round(float(results_main[node][4])/float(con),2)) + "\t";
+	else:
+		outline += '0' + "\t";
+	outline += str(results_main[node][2]) + "\t" + str(results_main[node][6]) + "\n";
+	pubfile.write(outline);
+
+nodefile.close();
+pubfile.close();
+## End node and oub output block
+
+## Begin plot block
+# print "Generating plots...";
+
+# x_nodes = [];
+# y_rapids = [];
+# y_changes = [];
+# y_exp = [];
+# y_rexp = [];
+# y_con = [];
+# y_rcon = [];
+# for node in results_main:
+# 	y_rapids.append(results_main[node][9]);
+# 	y_changes.append((results_main[node][0]+results_main[node][3])-results_main[node][9]);
+
+# 	y_rexp.append(results_main[node][7]);
+# 	y_exp.append(results_main[node][0]-results_main[node][7]);
+
+# 	y_rcon.append(results_main[node][8]);
+# 	y_con.append(results_main[node][3]-results_main[node][8]);
+
+# 	if node[0] != "<":
+# 		node = node.title()[:node.index("<")];
+
+# 	x_nodes.append(node);
+
+# #barcols = ['#ffef52','#5b5bd7'];
+# barcols = ['#e5653c', '#2aa064'];
+
+# y_data = [y_rapids, y_changes];
+# y_names = ['total rapids', 'changes'];
+# crplot.barPlotStack(x_nodes,y_data,y_names,"","# changing families","# of changing families",outprefix+"_change.html",barcols,w=1200);
+# # Total plot
+
+# y_data = [y_rexp, y_exp];
+# y_names = ['rapid expansions', 'expansions'];
+# crplot.barPlotStack(x_nodes,y_data,y_names,"","# expanding families","# of expanding families",outprefix+"_expand.html",barcols,w=1200);
+# # Expansion plot
+
+# y_data = [y_rcon, y_con];
+# y_names = ['rapid contractions', 'contractions'];
+# crplot.barPlotStack(x_nodes,y_data,y_names,"","# contracting families","# of contracting families",outprefix+"_contract.html",barcols,w=1200);
+# # Contraction plot
+## End plot block
+
+# node_fams {key:value} format: {node:list of two lists containing family ids for (rapid) expansions and (rapid) contractions, respectively}
+# results {key:value} format: {node:[expand,gene expand,equal,contract,gene contract,families lost,avg expansion,sigexpand,sigcontract,total sig changes]}
+print "RESULTS TABLE -- tab delimted for easy copy/pasting into your favorite spreadsheet program"
+print "\tExpansions\tGenes Gained\tEqual\tContractions\tGenes Lost\tFamilies Lost\tAverage Expansion\tSig Expansions\tSig Contractions\tTotal Sig Changes";
+for species in results_main:
+	outline = species + "\t";
+	for col in results_main[species]:
+		outline = outline + str(col) + "\t";
+	print outline;
+
+print
+print "CAFE labeled tree:\t" + labeled_tree;
+# This block simply prints the information stored in results to the screen.
+print "=======================================================================";
+```
+
