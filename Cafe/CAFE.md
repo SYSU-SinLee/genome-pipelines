@@ -1,15 +1,11 @@
 # CAFE - genefamily
 
-scripts: CAFE%20-%20gen%20117a1/python_scripts.zip, CAFE%20-%20gen%20117a1/cafe_tutorial.pdf, CAFE%20-%20gen%20117a1/cafe_manual.pdf
-
 # 1. 软件和自带脚本包的下载
 
 cafe的[github主页](https://github.com/hahnlab/CAFE)、[最新版下载页面](https://github.com/hahnlab/CAFE/releases/tag/v4.2.1)、[官网](https://hahnlab.github.io/CAFE/download.html)、[自带的Python包](https://iu.app.box.com/v/cafetutorial-files)。
 
-<aside>
-💡 有时候需要翻墙，然后Python包暂时看起来不可用，直接从这个页面的附件下载比较好。
 
-</aside>
+💡 有时候需要翻墙，然后Python包暂时看起来不可用，直接从这个页面的附件下载比较好。
 
 ---
 
@@ -17,10 +13,8 @@ cafe的[github主页](https://github.com/hahnlab/CAFE)、[最新版下载页面]
 
 ## 2.1 输入文件准备
 
-<aside>
-💡 `Orthogroups.GeneCount.tsv`在*Orthofinde*r输出中的`Orthogroups`文件夹。
 
-</aside>
+💡 `Orthogroups.GeneCount.tsv`在*Orthofinder输出中的`Orthogroups`文件夹。
 
 ```bash
 perl GeneCount2CafeInput.pl ../Orthogroups/Orthogroups.GeneCount.tsv >cafeinput.raw
@@ -28,7 +22,7 @@ python clade_and_size_filter.py -s -i cafeinput.raw -o cafeinput.filtered
 ```
 
 - GeneCount2CafeInput.pl
-    
+
     ```perl
     use 5.011;
     
@@ -55,9 +49,9 @@ python clade_and_size_filter.py -s -i cafeinput.raw -o cafeinput.filtered
             }
     }
     ```
-    
+
 - clade_and_size_filter.py
-    
+
     ```python
     """
     This script defines and runs the clade_filter and size_filter functions. The former keeps only gene families with gene copies in at least two species of the specified clades; this is necessary because ancestral state reconstruction requires at least two species per clade of interest. The latter separates gene families with < 100 from > 100 gene copies in one or more species; this is necessary because big gene families cause the variance of gene copy number to be too large and lead to noninformative parameter estimates.
@@ -193,7 +187,6 @@ python clade_and_size_filter.py -s -i cafeinput.raw -o cafeinput.filtered
     
         filter_print(args.input_file, lines_to_keep_set, lines_to_separate_set, args.output_file) # .add(0) to get header back
     ```
-    
 
 ---
 
@@ -204,7 +197,7 @@ cafe cafe_script.sh
 ```
 
 - cafe_script.sh
-    
+
     ```bash
     #! ~/software/CAFE/release/cafe
     date
@@ -220,7 +213,6 @@ cafe cafe_script.sh
     report reportout1
     date
     ```
-    
 
 ---
 
@@ -229,3 +221,80 @@ cafe cafe_script.sh
 ```bash
 python /path2/python_scripts/cafetutorial_report_analysis.py -i reportout1.cafe -r 1 -o rapid
 ```
+
+---
+
+## 2.4 用拟南芥的基因做基因家族功能注释
+
+```perl
+perl Rapid_GF_Anno.pl rapid_fams.txt Orthogroups.txt ath.gene.discription
+```
+
+-   Rapid_GF_Anno.pl
+
+    ```perl
+    use strict;
+    use autodie;
+    
+    die "Usage: perl $0 rapid_fams.txt Orthogroups.txt ath.gene.discription\n" if @ARGV != 3 ;
+    
+    open RGF,"<","$ARGV[0]";
+    open ORTHO,"<","$ARGV[1]";
+    open ANNO,"<","$ARGV[2]";
+    
+    my %Ath_Genes;
+    while (<ORTHO>) {
+    		s/\s+$//;
+    		my @eles=split/\s+/,$_;
+    		my $OG=shift @eles;
+    		$OG=~s/://;
+    		my @Ath_Genes;
+    		foreach my $ele (@eles) {
+    			push @Ath_Genes,$ele if $ele=~/Ath/;
+    		}
+    		$Ath_Genes{$OG}=[@Ath_Genes];
+    		undef @Ath_Genes;
+    }
+    close ORTHO;
+    
+    
+    my %Description;
+    while (<ANNO>) {
+    	next if /^Locus/;
+    	next if /^\s+$/;
+    	s/\s+$//;
+    	s/\(source\:Araport11\)//;
+    	s/\s+protein_coding//;
+    	my @eles=split/\s+/;
+    	my $Locus=shift @eles;
+    	my $Gene=shift @eles;
+    	my $Description=join(' ',@eles);
+    	$Description{$Gene}=$Description;
+    }
+    
+    while (<RGF>) {
+    	next if (/^#/ || /^Overall/);
+    	s/\s+$//;
+    	my @eles=split/\s+/;
+    	my $spe=shift @eles;
+    	$spe=~s/\<//;
+    	$spe=~s/\>//;
+    	my @OGs=split/,/,(shift @eles);
+    	(my $out=$spe)=~s/:/\.rapid\.AthAnno/;
+    	open OUT,">","$out";
+    	foreach my $OG (@OGs) {
+    		$OG=~m/(\+|\-)/;
+    		my $Status=$1;
+    		$OG=~s/\[.*\]//;
+    		my @Ath_Genes=@{$Ath_Genes{$OG}};
+    		foreach my $Ath_Gene (@Ath_Genes) {
+    			$Ath_Gene=~s/^Ath\|//;
+    			print OUT "$OG$Status: $Description{$Ath_Gene}\n";
+    		}
+    	}
+    
+    }
+    ```
+
+    
+
